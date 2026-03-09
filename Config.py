@@ -2,15 +2,14 @@ from dataclasses import dataclass, field
 from typing import TypedDict
 import numpy as np
 from numpy.typing import NDArray
-
+from typing import Optional
 
 @dataclass
-class ModelOuput:
+class MetricOuput:
     c_index: float = 0.0
-    weighted_brier: float = 0.0
+    mean_brier: float = 0.0
     hybrid_score: float = 0.0
-    risk_scores: NDArray = field(default_factory=lambda: np.empty(0))
-    hit_probs: NDArray = field(default_factory=lambda: np.empty((0, 3)))
+    
     
 @dataclass
 class GBSAConfig:

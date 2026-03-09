@@ -1,0 +1,62 @@
+from dataclasses import dataclass, field
+from typing import TypedDict
+import numpy as np
+from numpy.typing import NDArray
+
+
+@dataclass
+class ModelOuput:
+    c_index: float = 0.0
+    weighted_brier: float = 0.0
+    hybrid_score: float = 0.0
+    risk_scores: NDArray = field(default_factory=lambda: np.empty(0))
+    hit_probs: NDArray = field(default_factory=lambda: np.empty((0, 3)))
+    
+@dataclass
+class GBSAConfig:
+    # core boosting
+    loss:str = "coxph"
+    n_estimators: int = 100
+    learning_rate: float = 0.1
+    subsample: float = 1.0
+
+    # tree structure
+    max_depth: int = 3
+    max_features: int = None
+    max_leaf_nodes: int = None
+
+    # split control
+    min_samples_split: int = 2
+    min_samples_leaf: int = 1
+    min_weight_fraction_leaf: float = 0.0
+    min_impurity_decrease: float = 0.0
+
+    # tree criterion
+    criterion: str = "friedman_mse"
+
+    # regularization
+    ccp_alpha: float = 0.0
+    dropout_rate: float = 0.0
+
+    # early stopping
+    validation_fraction: float = 0.1
+    n_iter_no_change: int = None
+    tol: float = 1e-4
+
+    # misc
+    random_state: int = 42
+    warm_start: bool = False
+    verbose: int = 0
+
+@dataclass
+class PreprocessingConfig:
+    eps: float = 1e-6
+    min_speed: float = 0.01
+    max_hours: float = 9999.0
+
+@dataclass
+class Config:
+    seed: int = 42
+    gbsa_config: GBSAConfig = field(default_factory=lambda: GBSAConfig())
+    preprocessing_config: PreprocessingConfig = field(default_factory=lambda: PreprocessingConfig())
+

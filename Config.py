@@ -12,6 +12,14 @@ class MetricOuput:
     
     
 @dataclass
+class KFoldResult:
+    c_index: float = 0.0
+    mean_brier: float = 0.0
+    hybrid_score: float = 0.0
+    std_hybrid: Optional[float] = None
+    std_mean_brier: Optional[float] = None
+    std_c_index: Optional[float] = None
+@dataclass
 class GBSAConfig:
     # core boosting
     loss:str = "coxph"

@@ -25,9 +25,9 @@ import sklearn
 import sksurv
 import kagglehub
 import os
-from Config import Config
+from Config import Config, GBSAConfig, PreprocessingConfig, MetricOuput, KFoldResult
 from dataclasses import asdict
-from Config import MetricOuput
+
 
 warnings.filterwarnings("ignore")
 
@@ -139,7 +139,7 @@ def compute_hybrid_score(y_train, y_valid, risk_score, pred_surv, horizons=HORIZ
 
     return MetricOuput(c_index=cidx, mean_brier=mean_bs, hybrid_score=hybrid)
 
-def KFold_val(model: BaseEstimator, data:pd.DataFrame, seed, n_splits=5, n_repeats=2, verbose=False) -> MetricOuput:
+def KFold_val(model: BaseEstimator, data:pd.DataFrame, seed, n_splits=5, n_repeats=2, verbose=False) -> KFoldResult:
     KFold = RepeatedKFold(n_splits=n_splits, n_repeats=n_repeats, random_state=seed)
     c_indices = []
     brier_scores = []
@@ -180,7 +180,10 @@ def KFold_val(model: BaseEstimator, data:pd.DataFrame, seed, n_splits=5, n_repea
     mean_c_index = np.mean(np.array(c_indices)).item()
     mean_brier = np.mean(np.array(brier_scores)).item()
     mean_hybrid = np.mean(np.array(hybrid_scores)).item()
-    return MetricOuput(c_index=mean_c_index, mean_brier=mean_brier, hybrid_score=mean_hybrid)
+    std_c_index = np.std(np.array(hybrid_scores)).item()
+    std_mean_brier = np.std(np.array(brier_scores)).item()
+    std_hybrid = np.std(np.array(hybrid_scores)).item()
+    return KFoldResult(c_index=mean_c_index, mean_brier=mean_brier, hybrid_score=mean_hybrid, std_c_index=std_c_index, std_mean_brier=std_mean_brier, std_hybrid=std_hybrid)
 
 
 
@@ -706,9 +709,9 @@ def objective(trial: Trial) -> float:
     config = sample_gbsa_config(trial, seed)
     model = GradientBoostingSurvivalAnalysis(**asdict(config))
     start = time.perf_counter()
-    cv_results = KFold_val(model, train_processed, seed, n_splits=5, n_repeats=2, verbose=False)
+    cv_results= KFold_val(model, train_processed, seed, n_splits=5, n_repeats=4, verbose=False)
     elapsed = time.perf_counter() - start
-    print(f"Trial {trial.number} completed in {elapsed:.2f} seconds with hybrid score {cv_results.hybrid_score:.4f} and C-index {cv_results.c_index:.4f} and mean Brier {cv_results.mean_brier:.4f}")
+    print(f"Trial {trial.number} completed in {elapsed:.2f} seconds with \nhybrid score {cv_results.hybrid_score:.4f} and \nC-index {cv_results.c_index:.4f} and \nmean Brier {cv_results.mean_brier:.4f} \n(std {cv_results.std_hybrid:.4f})\n")
     return cv_results.hybrid_score
 
 study = optuna.create_study(

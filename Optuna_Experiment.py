@@ -659,6 +659,8 @@ from optuna import Trial
 from optuna.samplers import TPESampler
 from optuna.pruners import MedianPruner
 from Config import GBSAConfig
+from optuna.storages import JournalStorage
+from optuna.storages.journal import JournalFileBackend
 
 
 def sample_gbsa_config(trial: optuna.Trial, seed: int = 42) -> GBSAConfig:
@@ -711,12 +713,16 @@ def objective(trial: Trial) -> float:
     start = time.perf_counter()
     cv_results= KFold_val(model, train_processed, seed, n_splits=5, n_repeats=4, verbose=False)
     elapsed = time.perf_counter() - start
-    print(f"Trial {trial.number} completed in {elapsed:.2f} seconds with \nhybrid score {cv_results.hybrid_score:.4f} and \nC-index {cv_results.c_index:.4f} and \nmean Brier {cv_results.mean_brier:.4f} \n(std {cv_results.std_hybrid:.4f})\n")
+    print(f"\nTrial {trial.number} completed in {elapsed:.2f} seconds with \nhybrid score {cv_results.hybrid_score:.4f} and \nC-index {cv_results.c_index:.4f} and \nmean Brier {cv_results.mean_brier:.4f} \n(std {cv_results.std_hybrid:.4f})")
     return cv_results.hybrid_score
+
+storage = JournalStorage(
+    JournalFileBackend("gbsa_journal.log")
+)
 
 study = optuna.create_study(
     study_name="gbsa_survival",
-    storage="sqlite:///gbsa_optuna.db",
+    storage=storage,
     load_if_exists=True,
     direction="maximize",
     sampler=TPESampler(seed=seed, multivariate=True),

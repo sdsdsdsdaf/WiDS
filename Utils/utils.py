@@ -104,6 +104,7 @@ def compute_hybrid_score(y_train, y_valid, risk_score, pred_surv, horizons=None)
 
     return MetricOuput(c_index=cidx, mean_brier=mean_bs, hybrid_score=hybrid)
 
+# 가능하다면  Std도 구하게 수정 예정 -> 2차원 배열을 활용하여
 def make_oof_predictions(model: BaseEstimator, data:pd.DataFrame, seed, n_splits=5, n_repeats=2, verbose=False, horizons=None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     KFold = RepeatedKFold(n_splits=n_splits, n_repeats=n_repeats, random_state=seed)
     n_samples = len(data)

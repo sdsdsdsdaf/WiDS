@@ -7,10 +7,8 @@ from numpy.typing import NDArray
 @dataclass
 class MetricOuput:
     c_index: float = 0.0
-    weighted_brier: float = 0.0
+    mean_brier: float = 0.0
     hybrid_score: float = 0.0
-    risk_scores: NDArray = field(default_factory=lambda: np.empty(0))
-    hit_probs: NDArray = field(default_factory=lambda: np.empty((0, 3)))
     
 @dataclass
 class KFoldResult:
@@ -66,6 +64,8 @@ class PreprocessingConfig:
 @dataclass
 class Config:
     seed: int = 42
+    cv_n_splits: int = 5
+    cv_n_repeats: int = 4
     gbsa_config: GBSAConfig = field(default_factory=lambda: GBSAConfig())
     preprocessing_config: PreprocessingConfig = field(default_factory=lambda: PreprocessingConfig())
 

@@ -663,7 +663,7 @@ from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
 
 
-def sample_gbsa_config(trial: optuna.Trial, seed: int = 42) -> GBSAConfig:
+def sample_gbsa_config(trial: Trial, seed: int = 42) -> GBSAConfig:
     config = GBSAConfig(
         # core boosting
         loss="coxph",

@@ -25,19 +25,12 @@ import sklearn
 import sksurv
 import kagglehub
 import os
-from Utils.Config import Config, GBSAConfig, PreprocessingConfig, MetricOuput, KFoldResult
+from Utils.Config import Config, GBSAConfig, TrialResult
 from dataclasses import asdict
 
 from Utils.utils import (
     set_seed,
-    make_surv_y,
-    get_eval_horizons,
-    get_surv_pred_from_model,
-    get_hit_pred_from_model,
-    compute_brier_scores,
-    compute_c_index,
-    compute_mean_brier,
-    compute_hybrid_score,
+    save_cv_result_json,
     KFold_val,
     create_features,
     save_config_yaml,
@@ -138,16 +131,33 @@ def objective(trial: Trial) -> float:
         cv_n_repeats=10
     )
     
-    dir = os.path.join("Trial", "GBSA")
+    dir = os.path.join("Trials", "GBSA", f"trial_{trial.number}")
     os.makedirs(dir, exist_ok=True)
-    file_path = os.path.join(dir, f"trial_{trial.number}_config.yaml")
-    save_config_yaml(config,file_path)
+    config_file_path = os.path.join(dir, "config.yaml")
+    cv_resutl_file_path = os.path.join(dir, "cv_results.json")
+    save_config_yaml(config, config_file_path)
     
     model = GradientBoostingSurvivalAnalysis(**asdict(config.gbsa_config))
     start = time.perf_counter()
     cv_results= KFold_val(model, train_processed, seed, n_splits=config.cv_n_splits, n_repeats=config.cv_n_repeats, verbose=False)
     elapsed = time.perf_counter() - start
-    print(f"\nTrial {trial.number} completed in {elapsed:.2f} seconds with \nhybrid score {cv_results.hybrid_score:.4f} and \nC-index {cv_results.c_index:.4f} and \nmean Brier {cv_results.mean_brier:.4f}")
+    
+    trial.set_user_attr(
+        "kfold_result",
+        asdict(cv_results)
+    )
+    
+    print(f"\nTrial {trial.number} completed in {elapsed:.2f} seconds with")
+    print(f"hybrid score {cv_results.hybrid_score:.4f} and \nC-index {cv_results.c_index:.4f} and \nmean Brier {cv_results.mean_brier:.4f}")
+    print(f"hybrid STD {cv_results.std_hybrid:.4f} and \nC-index STD {cv_results.std_c_index:.4f} and \nmean Brier STD {cv_results.std_mean_brier:.4f}")
+    
+    trial_result = TrialResult(
+        trial_id=trial.number,
+        config=config,
+        result=cv_results
+    )
+    save_cv_result_json(trial_result, cv_resutl_file_path)
+    
     return cv_results.hybrid_score
 
 storage = JournalStorage(
@@ -165,3 +175,5 @@ study = optuna.create_study(
 study.optimize(objective, n_trials=300)
 
 
+
+# %%

@@ -69,3 +69,8 @@ class Config:
     gbsa_config: GBSAConfig = field(default_factory=lambda: GBSAConfig())
     preprocessing_config: PreprocessingConfig = field(default_factory=lambda: PreprocessingConfig())
 
+@dataclass
+class TrialResult:
+    trial_id: int
+    config: Config
+    result: KFoldResult

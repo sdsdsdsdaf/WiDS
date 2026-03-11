@@ -19,9 +19,35 @@ try:
 except ImportError:
     from Config import Config, MetricOuput, KFoldResult, TrialResult
 from dataclasses import asdict
-
+from dataclasses import is_dataclass, fields
+from typing import Type, TypeVar
 
 HORIZONS= np.array([12.0, 24.0, 48.0, 72.0])  # 예측할 시간 간격 (시간 단위)
+
+T = TypeVar("T")
+
+def from_dict(dataclass_type: Type[T], data: dict) -> T:
+    """Recursively convert dict to dataclass."""
+    
+    kwargs = {}
+
+    for f in fields(dataclass_type):
+        value = data.get(f.name)
+
+        if value is None:
+            kwargs[f.name] = None
+            continue
+
+        field_type = f.type
+
+        # Nested dataclass
+        if is_dataclass(field_type):
+            kwargs[f.name] = from_dict(field_type, value)
+        else:
+            kwargs[f.name] = value
+
+    return dataclass_type(**kwargs)
+
 
 def set_seed(seed=42):
     np.random.seed(seed)
@@ -43,6 +69,18 @@ def save_config_yaml(config: Config, path: str):
 def save_cv_result_json(result: TrialResult, path: str):
     with open(path, "w") as f:
         json.dump(asdict(result), f, indent=2)
+        
+def load_config_yaml(path: str) -> Config:
+    with open(path) as f:
+        data = yaml.safe_load(f)
+
+    return from_dict(Config, data)
+
+def load_cv_result_json(path: str) -> TrialResult:
+    with open(path) as f:
+        data = json.load(f)
+
+    return from_dict(TrialResult, data)
     
 def get_surv_pred_from_model(model, X, horizons=None):
     """

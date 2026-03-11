@@ -1,0 +1,28 @@
+seed: 42
+cv_n_splits: 5
+cv_n_repeats: 10
+gbsa_config:
+  loss: coxph
+  n_estimators: 391
+  learning_rate: 0.024657655206535702
+  subsample: 0.6274798528316405
+  max_depth: 3
+  max_features: 0.7
+  max_leaf_nodes: null
+  min_samples_split: 2
+  min_samples_leaf: 13
+  min_weight_fraction_leaf: 0.0
+  min_impurity_decrease: 0.026583691831542904
+  criterion: friedman_mse
+  ccp_alpha: 0.00021243316090524837
+  dropout_rate: 0.06308967227645806
+  validation_fraction: 0.26378306141435537
+  n_iter_no_change: 5
+  tol: 3.939949982821709e-05
+  random_state: 42
+  warm_start: false
+  verbose: 0
+preprocessing_config:
+  eps: 1.0e-06
+  min_speed: 0.01
+  max_hours: 9999.0

@@ -14,6 +14,8 @@ from sksurv.metrics import (
 )
 from tqdm.auto import tqdm
 import yaml
+import os
+
 try:
     from Utils.Config import Config, MetricOuput, KFoldResult, TrialResult
 except ImportError:
@@ -21,10 +23,72 @@ except ImportError:
 from dataclasses import asdict
 from dataclasses import is_dataclass, fields
 from typing import Type, TypeVar
+import optuna
+from sksurv.ensemble import GradientBoostingSurvivalAnalysis
 
 HORIZONS= np.array([12.0, 24.0, 48.0, 72.0])  # 예측할 시간 간격 (시간 단위)
 
 T = TypeVar("T")
+
+def build_gbsa_model_from_trial(trial: optuna.Trial, seed=42) -> GradientBoostingSurvivalAnalysis:
+    params = trial.params.copy()
+    params["random_state"] = seed
+    model = GradientBoostingSurvivalAnalysis(**params)
+    return model
+
+def save_top_trial_oofs(
+    study: optuna.Study,
+    data: pd.DataFrame,
+    horizons: np.ndarray,
+    out_dir: str=None,
+    top_ratio: float = 0.3,
+    seed: int = 42,
+    n_splits: int = 5,
+    n_repeats: int = 4,
+):
+    out_path = os.path.join(out_dir, f"top_{int(top_ratio*100)}_oof_results.json")
+    os.makedirs(out_path, exist_ok=True)
+    
+    trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    trials = sorted(trials, key=lambda x: x.value, reverse=True)
+    top_k = int(len(trials) * top_ratio)
+    print(f"Saving OOF predictions for top {top_k} trials to {out_path}...")
+    print("Best trial value:", trials[0].value)
+    print("Best Tral Number:", trials[0].number)
+    
+    top_trials = trials[:top_k]
+    for trial in top_trials:
+        trial_dir = os.path.join(out_path, f"trial_{trial.number}")
+        os.makedirs(trial_dir, exist_ok=True)
+        
+        model = build_gbsa_model_from_trial(trial, seed)
+        oof_result = make_oof_predictions(
+            model=model,
+            data=data,
+            horizons=horizons,
+            seed=seed,
+            n_splits=n_splits,
+            n_repeats=n_repeats,
+            verbose=False,
+        )
+        oof_result_surv = oof_result["final_oof_surv"]
+        oof_result_hit = 1 - oof_result_surv
+        oof_result_risk = oof_result["final_oof_risk"]
+        
+        np.save(os.path.join(trial_dir, "oof_surv.npy"), oof_result_surv)
+        np.save(os.path.join(trial_dir, "oof_hit.npy"), oof_result_hit)
+        np.save(os.path.join(trial_dir, "oof_risk.npy"), oof_result_risk)
+
+        meta = {
+            "trial_id": trial.number,
+            "value": trial.value,
+            "params": trial.params,
+            "user_attrs": trial.user_attrs,
+        }
+        
+        with open(os.path.join(trial_dir, "meta.json"), "w") as f:
+            json.dump(meta, f, indent=2)
+
 
 def from_dict(dataclass_type: Type[T], data: dict) -> T:
     """Recursively convert dict to dataclass."""
@@ -322,6 +386,39 @@ def KFold_val(
         std_hybrid=np.std(hybrid_scores).item(),
     )
 
+def make_corr_matrix(pred_matrix:np.ndarray, flatten=True) -> np.ndarray:
+    """
+    Compute correlation matrix between models.
+
+    Args:
+        pred_matrix (np.ndarray): 
+            Shape = (n_models, n_samples, n_horizons)
+
+        flatten (bool) :
+            True  -> flatten (samples × horizons)
+            False -> horizon-wise correlation averaged
+
+    Returns:
+        corr_matrix : np.ndarray
+            Shape = (n_models, n_models)
+    """
+    
+    n_models, n_samples, n_horizons = pred_matrix.shape
+
+    if flatten:
+        flat = pred_matrix.reshape(n_models, -1)
+        corr_matrix = np.corrcoef(flat, rowvar=True)
+        return np.nan_to_num(corr_matrix)
+
+    corr_by_horizon = np.zeros((n_horizons, n_models, n_models), dtype=float)
+
+    for h in range(n_horizons):
+        horizon_preds = pred_matrix[:, :, h]   # (n_models, n_samples)
+        corr_h = np.corrcoef(horizon_preds, rowvar=True)
+        corr_by_horizon[h] = np.nan_to_num(corr_h)
+
+    return corr_by_horizon
+    
 
 
 def create_features(df: pd.DataFrame, eps=0.1, max_hours=9999, min_speed=0.01)-> pd.DataFrame:

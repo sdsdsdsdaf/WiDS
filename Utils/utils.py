@@ -19,28 +19,50 @@ from collections import Counter
 
 try:
     from Utils.Config import Config, MetricOuput, KFoldResult, TrialResult, EnsembleModel
+    from Utils.Model import CoxnetWithStandardScaler
 except ImportError:
     from Config import Config, MetricOuput, KFoldResult, TrialResult, EnsembleModel
+    from Model import CoxnetWithStandardScaler
 from dataclasses import asdict
 from dataclasses import is_dataclass, fields
 from typing import Type, TypeVar
 import optuna
-from sksurv.ensemble import GradientBoostingSurvivalAnalysis
+from sksurv.ensemble import GradientBoostingSurvivalAnalysis, RandomSurvivalForest
+
 
 HORIZONS= np.array([12.0, 24.0, 48.0, 72.0])  # 예측할 시간 간격 (시간 단위)
 
 T = TypeVar("T")
 
-def build_gbsa_model_from_trial(trial: optuna.Trial, seed=42) -> GradientBoostingSurvivalAnalysis:
-    params = trial.params.copy()
-    params["random_state"] = seed
-    model = GradientBoostingSurvivalAnalysis(**params)
+def build_model(model_type:str, seed=42, **params):
+    if model_type == "gbsa":
+        params["random_state"] = seed
+        model = GradientBoostingSurvivalAnalysis(**params)
+
+    elif model_type == "rsf":
+        params["random_state"] = seed
+        params["n_jobs"] = -1
+        model = RandomSurvivalForest(**params)
+
+    elif model_type == "coxnet":
+        model = CoxnetWithStandardScaler(**params)
+
+    else:
+        raise ValueError(f"Unknown model_type: {model_type}")
+    
     return model
+
+def build_model_from_trial(trial: optuna.Trial, model_type:str, seed=42):
+    params = trial.params.copy()
+    model = build_model(model_type, seed, **params)
+
+    return model_type, model
 
 def load_top_trial_oofs(
     trials: list[optuna.Trial],
     dir:str = None,
-)-> dict[int, dict]:
+)-> dict[tuple[str, int], dict]:
+    
     result = {}
     trial_sort_by_value = sorted(trials, key= lambda x: x.value, reverse=True)
     trial_numbers = [t.number for t in trial_sort_by_value]
@@ -58,12 +80,13 @@ def load_top_trial_oofs(
             meta = json.load(f)
         trial_result['value'] = meta['value']
         trial_result['value_std'] = meta['user_attrs']['kfold_result']['std_hybrid']
-        trial_result['trial_id'] = meta['trial_id']
+        trial_result['trial_id'] =  (meta['model_type'], meta['trial_id'])
         trial_result['oof_risk'] = np.load(oof_risk_file_path)
         trial_result['oof_surv'] = np.load(oof_surv_file_path)
         trial_result['oof_hit'] = np.load(oof_hit_file_path)
+        trial_result['model_type'] = meta['model_type']
         
-        result[num] = trial_result
+        result[(meta['model_type'],num)] = trial_result
         
     return result
 
@@ -75,8 +98,9 @@ def save_top_trial_oofs(
     n_splits: int = 5,
     n_repeats: int = 4,
     trial_dir:str = None,
+    model_type:str = None
 ):
-    model = build_gbsa_model_from_trial(trial, seed)
+    model_type, model = build_model_from_trial(trial, model_type, seed)
     oof_result = make_oof_predictions(
         model=model,
         data=data,
@@ -95,6 +119,7 @@ def save_top_trial_oofs(
     np.save(os.path.join(trial_dir, "oof_risk.npy"), oof_result_risk)
 
     meta = {
+        "model_type": model_type,
         "trial_id": trial.number,
         "value": trial.value,
         "params": trial.params,
@@ -120,11 +145,14 @@ def get_top_trial_oofs(
     seed: int = 42,
     n_splits: int = 5,
     n_repeats: int = 4,
-) -> dict[int, dict]:
-
+    model_type:str = None,
+) -> dict[tuple[str, int], dict]:
+    
+    out_dir = os.path.join(out_dir, model_type.upper())
     trials:list[optuna.Trial] = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
     trials = sorted(trials, key=lambda x: x.value, reverse=True)
-    top_k = int(len(trials) * top_ratio)
+    top_k = max(1, int(len(trials) * top_ratio))
+    
     print(f"Saving OOF predictions for top {top_k} trials to {out_dir}...")
     print("Best trial value:", trials[0].value)
     print("Best Tral Number:", trials[0].number)
@@ -141,7 +169,8 @@ def get_top_trial_oofs(
                 seed=seed,
                 n_splits=n_splits,
                 n_repeats=n_repeats,
-                trial_dir=trial_dir
+                trial_dir=trial_dir,
+                model_type=model_type
             )
     
     
@@ -448,7 +477,7 @@ def calc_pred_corr(pred1: np.ndarray, pred2: np.ndarray) -> float:
     return np.corrcoef(pred1.ravel(), pred2.ravel())[0, 1]
     
 def find_ensemble_model(
-    oof_result: dict[int, dict],
+    oof_result: dict[tuple[str,int],dict],
     label=None,
     max_pair_corr: float = 0.995,
     max_ensemble_corr: float = 0.995,
@@ -464,7 +493,7 @@ def find_ensemble_model(
 ) -> EnsembleModel:
 
     if init_model_list is None:
-        init_model_list = [106]
+        init_model_list = [("gbsa", 106)]
 
     if horizons is None:
         horizons = [12, 24, 48, 72]
@@ -517,17 +546,17 @@ def find_ensemble_model(
         current_ensemble_risk = np.mean(np.stack(select_oof_risk_list, axis=0), axis=0)
         current_ensemble_surv = np.mean(np.stack(select_oof_surv_list, axis=0), axis=0)
 
-        for trial_num in candidate_model_list:
-            one_trial_oof_result = oof_result[trial_num]
+        for trial_id in candidate_model_list:
+            one_trial_oof_result = oof_result[trial_id]
             candidate_risk = one_trial_oof_result["oof_risk"]
             candidate_surv = one_trial_oof_result["oof_surv"]
 
-            is_duplicate = trial_num in select_model_list
+            is_duplicate = trial_id in select_model_list
 
             # Duplicate count limit
-            if allow_duplicate and select_model_list.count(trial_num) >= max_select:
+            if allow_duplicate and select_model_list.count(trial_id) >= max_select:
                 if verbose:
-                    print(f"[Trial {trial_num}] skip (duplicate count limit: {max_select})")
+                    print(f"[Trial {trial_id}] skip (duplicate count limit: {max_select})")
                 continue
 
             # Candidate vs selected each model
@@ -546,7 +575,7 @@ def find_ensemble_model(
             if max_pair_corr_val > max_pair_corr:
                 if verbose:
                     print(
-                        f"[Trial {trial_num}] skip "
+                        f"[Trial {trial_id}] skip "
                         f"(pair corr={max_pair_corr_val:.5f} > {max_pair_corr})"
                     )
                 continue
@@ -554,7 +583,7 @@ def find_ensemble_model(
             if ensemble_corr_val > max_ensemble_corr:
                 if verbose:
                     print(
-                        f"[Trial {trial_num}] skip "
+                        f"[Trial {trial_id}] skip "
                         f"(ensemble corr={ensemble_corr_val:.5f} > {max_ensemble_corr})"
                     )
                 continue
@@ -578,7 +607,7 @@ def find_ensemble_model(
 
             if verbose:
                 print(
-                    f"[Trial {trial_num}] "
+                    f"[Trial {trial_id}] "
                     f"score={eval_result.hybrid_score:.6f} "
                     f"improve={improve_score:+.6f} "
                     f"pair_corr={max_pair_corr_val:.5f} "
@@ -590,7 +619,7 @@ def find_ensemble_model(
                 continue
 
             if max_improvement < improve_score:
-                select_trial_id = trial_num
+                select_trial_id = trial_id
                 max_improvement = improve_score
                 max_score_result = eval_result
 

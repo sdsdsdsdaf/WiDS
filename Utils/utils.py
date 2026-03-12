@@ -500,6 +500,7 @@ def find_ensemble_model(
         print(f"Initial hybrid score: {prev_eval_result.hybrid_score:.6f}")
         print(f"Allow duplicate: {allow_duplicate}")
         print(f"Max select per model: {max_select}")
+        print(f"Ensemble Candidate Model: {len(candidate_model_list)}")
 
     while len(select_model_list) < max_model_num:
 

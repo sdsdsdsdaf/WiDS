@@ -18,7 +18,13 @@ class KFoldResult:
     std_c_index:float = 0.0
     std_mean_brier:float = 0.0
     std_hybrid:float = 0.0
-    
+
+@dataclass
+class EnsembleModel:
+    model_weights:dict[int, float]
+    model_type:str = "GBSA"
+
+
 @dataclass
 class GBSAConfig:
     # core boosting

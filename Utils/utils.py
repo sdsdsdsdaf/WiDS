@@ -15,11 +15,12 @@ from sksurv.metrics import (
 from tqdm.auto import tqdm
 import yaml
 import os
+from collections import Counter
 
 try:
-    from Utils.Config import Config, MetricOuput, KFoldResult, TrialResult
+    from Utils.Config import Config, MetricOuput, KFoldResult, TrialResult, EnsembleModel
 except ImportError:
-    from Config import Config, MetricOuput, KFoldResult, TrialResult
+    from Config import Config, MetricOuput, KFoldResult, TrialResult, EnsembleModel
 from dataclasses import asdict
 from dataclasses import is_dataclass, fields
 from typing import Type, TypeVar
@@ -36,7 +37,81 @@ def build_gbsa_model_from_trial(trial: optuna.Trial, seed=42) -> GradientBoostin
     model = GradientBoostingSurvivalAnalysis(**params)
     return model
 
+def load_top_trial_oofs(
+    trials: list[optuna.Trial],
+    dir:str = None,
+)-> dict[int, dict]:
+    result = {}
+    trial_sort_by_value = sorted(trials, key= lambda x: x.value, reverse=True)
+    trial_numbers = [t.number for t in trial_sort_by_value]
+    
+    for num in trial_numbers:
+        
+        trial_result = {}
+        meta_file_path = os.path.join(dir, f"trial_{num}", "meta.json")
+        oof_hit_file_path = os.path.join(dir, f"trial_{num}","oof_hit.npy")
+        oof_risk_file_path = os.path.join(dir, f"trial_{num}","oof_risk.npy")
+        oof_surv_file_path = os.path.join(dir, f"trial_{num}","oof_surv.npy")
+        meta = {}
+        
+        with open(meta_file_path, "r") as f:
+            meta = json.load(f)
+        trial_result['value'] = meta['value']
+        trial_result['value_std'] = meta['user_attrs']['kfold_result']['std_hybrid']
+        trial_result['trial_id'] = meta['trial_id']
+        trial_result['oof_risk'] = np.load(oof_risk_file_path)
+        trial_result['oof_surv'] = np.load(oof_surv_file_path)
+        trial_result['oof_hit'] = np.load(oof_hit_file_path)
+        
+        result[num] = trial_result
+        
+    return result
+
 def save_top_trial_oofs(
+    trial: optuna.Trial,
+    data: pd.DataFrame,
+    horizons: np.ndarray,
+    seed: int = 42,
+    n_splits: int = 5,
+    n_repeats: int = 4,
+    trial_dir:str = None,
+):
+    model = build_gbsa_model_from_trial(trial, seed)
+    oof_result = make_oof_predictions(
+        model=model,
+        data=data,
+        horizons=horizons,
+        seed=seed,
+        n_splits=n_splits,
+        n_repeats=n_repeats,
+        verbose=False,
+    )
+    oof_result_surv = oof_result["final_oof_surv"]
+    oof_result_hit = 1 - oof_result_surv
+    oof_result_risk = oof_result["final_oof_risk"]
+    
+    np.save(os.path.join(trial_dir, "oof_surv.npy"), oof_result_surv)
+    np.save(os.path.join(trial_dir, "oof_hit.npy"), oof_result_hit)
+    np.save(os.path.join(trial_dir, "oof_risk.npy"), oof_result_risk)
+
+    meta = {
+        "trial_id": trial.number,
+        "value": trial.value,
+        "params": trial.params,
+        "user_attrs": trial.user_attrs,
+    }
+    
+    with open(os.path.join(trial_dir, "meta.json"), "w") as f:
+        json.dump(meta, f, indent=2)
+
+def is_exist_pred(trial_dir:str, file_list=["oof_surv.npy", "oof_hit.npy", "oof_risk.npy", "meta.json"]):
+    for file_name in file_list:
+        if not os.path.exists(os.path.join(trial_dir, file_name)):
+            return False
+    
+    return True
+
+def get_top_trial_oofs(
     study: optuna.Study,
     data: pd.DataFrame,
     horizons: np.ndarray,
@@ -45,51 +120,34 @@ def save_top_trial_oofs(
     seed: int = 42,
     n_splits: int = 5,
     n_repeats: int = 4,
-):
-    out_path = os.path.join(out_dir, f"top_{int(top_ratio*100)}_oof_results.json")
-    os.makedirs(out_path, exist_ok=True)
-    
-    trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+) -> dict[int, dict]:
+
+    trials:list[optuna.Trial] = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
     trials = sorted(trials, key=lambda x: x.value, reverse=True)
     top_k = int(len(trials) * top_ratio)
-    print(f"Saving OOF predictions for top {top_k} trials to {out_path}...")
+    print(f"Saving OOF predictions for top {top_k} trials to {out_dir}...")
     print("Best trial value:", trials[0].value)
     print("Best Tral Number:", trials[0].number)
     
     top_trials = trials[:top_k]
-    for trial in top_trials:
-        trial_dir = os.path.join(out_path, f"trial_{trial.number}")
+    for one_trial in top_trials:
+        trial_dir = os.path.join(out_dir, f"trial_{one_trial.number}")
         os.makedirs(trial_dir, exist_ok=True)
+        if not is_exist_pred(trial_dir):
+            save_top_trial_oofs(
+                trial=one_trial,
+                data=data,
+                horizons=horizons,
+                seed=seed,
+                n_splits=n_splits,
+                n_repeats=n_repeats,
+                trial_dir=trial_dir
+            )
+    
+    
+    return load_top_trial_oofs(top_trials, dir=out_dir)
         
-        model = build_gbsa_model_from_trial(trial, seed)
-        oof_result = make_oof_predictions(
-            model=model,
-            data=data,
-            horizons=horizons,
-            seed=seed,
-            n_splits=n_splits,
-            n_repeats=n_repeats,
-            verbose=False,
-        )
-        oof_result_surv = oof_result["final_oof_surv"]
-        oof_result_hit = 1 - oof_result_surv
-        oof_result_risk = oof_result["final_oof_risk"]
         
-        np.save(os.path.join(trial_dir, "oof_surv.npy"), oof_result_surv)
-        np.save(os.path.join(trial_dir, "oof_hit.npy"), oof_result_hit)
-        np.save(os.path.join(trial_dir, "oof_risk.npy"), oof_result_risk)
-
-        meta = {
-            "trial_id": trial.number,
-            "value": trial.value,
-            "params": trial.params,
-            "user_attrs": trial.user_attrs,
-        }
-        
-        with open(os.path.join(trial_dir, "meta.json"), "w") as f:
-            json.dump(meta, f, indent=2)
-
-
 def from_dict(dataclass_type: Type[T], data: dict) -> T:
     """Recursively convert dict to dataclass."""
     
@@ -384,6 +442,200 @@ def KFold_val(
         std_c_index=np.std(c_indices).item(),
         std_mean_brier=np.std(mean_briers).item(),
         std_hybrid=np.std(hybrid_scores).item(),
+    )
+    
+def calc_pred_corr(pred1: np.ndarray, pred2: np.ndarray) -> float:
+    return np.corrcoef(pred1.ravel(), pred2.ravel())[0, 1]
+    
+def find_ensemble_model(
+    oof_result: dict[int, dict],
+    label=None,
+    max_pair_corr: float = 0.995,
+    max_ensemble_corr: float = 0.995,
+    min_imporvement_score: float = 0.0003,
+    max_model_num: int = 10,
+    init_model_list: list = None,
+    horizons: list = None,
+    eps: float = 1e-6,
+    allow_duplicate: bool = False,
+    max_select: int = None,
+    max_select_ratio: float = 0.3,
+    verbose: bool = False,
+) -> EnsembleModel:
+
+    if init_model_list is None:
+        init_model_list = [106]
+
+    if horizons is None:
+        horizons = [12, 24, 48, 72]
+
+    if max_select is None:
+        max_select = max(1, int(max_model_num * max_select_ratio))
+
+    full_model_list = list(oof_result.keys())
+    select_model_list = init_model_list.copy()
+
+    if allow_duplicate:
+        candidate_model_list = full_model_list.copy()
+    else:
+        candidate_model_list = [m for m in full_model_list if m not in select_model_list]
+
+    select_oof_surv_list = [oof_result[trial_id]["oof_surv"] for trial_id in select_model_list]
+    select_oof_risk_list = [oof_result[trial_id]["oof_risk"] for trial_id in select_model_list]
+
+    eval_horizons = horizons.copy()
+    eval_horizons[-1] = min(72, label["time"].max() - eps)
+
+    prev_eval_result = compute_hybrid_score(
+        label,
+        label,
+        np.mean(np.stack(select_oof_risk_list, axis=0), axis=0),
+        np.mean(np.stack(select_oof_surv_list, axis=0), axis=0),
+        eval_horizons,
+    )
+
+    if verbose:
+        print("===== Initial Ensemble =====")
+        print(f"Initial models: {select_model_list}")
+        print(f"Initial hybrid score: {prev_eval_result.hybrid_score:.6f}")
+        print(f"Allow duplicate: {allow_duplicate}")
+        print(f"Max select per model: {max_select}")
+
+    while len(select_model_list) < max_model_num:
+
+        if verbose:
+            print("\n==============================")
+            print(f"Current ensemble size: {len(select_model_list)}")
+            print(f"Current hybrid score: {prev_eval_result.hybrid_score:.6f}")
+            print("==============================")
+
+        max_improvement = 0.0
+        select_trial_id = None
+        max_score_result = None
+
+        current_ensemble_risk = np.mean(np.stack(select_oof_risk_list, axis=0), axis=0)
+        current_ensemble_surv = np.mean(np.stack(select_oof_surv_list, axis=0), axis=0)
+
+        for trial_num in candidate_model_list:
+            one_trial_oof_result = oof_result[trial_num]
+            candidate_risk = one_trial_oof_result["oof_risk"]
+            candidate_surv = one_trial_oof_result["oof_surv"]
+
+            is_duplicate = trial_num in select_model_list
+
+            # Duplicate count limit
+            if allow_duplicate and select_model_list.count(trial_num) >= max_select:
+                if verbose:
+                    print(f"[Trial {trial_num}] skip (duplicate count limit: {max_select})")
+                continue
+
+            # Candidate vs selected each model
+            pair_corrs = [
+                calc_pred_corr(candidate_risk, selected_risk)
+                for selected_risk in select_oof_risk_list
+            ]
+            max_pair_corr_val = max(pair_corrs) if len(pair_corrs) > 0 else 0.0
+
+            # Candidate vs current ensemble mean
+            ensemble_corr_val = calc_pred_corr(candidate_risk, current_ensemble_risk)
+
+            # Correlation filtering:
+            # - If duplicate is not allowed: always filter
+            # - If duplicate is allowed: only filter for new models, not repeated picks
+            if max_pair_corr_val > max_pair_corr:
+                if verbose:
+                    print(
+                        f"[Trial {trial_num}] skip "
+                        f"(pair corr={max_pair_corr_val:.5f} > {max_pair_corr})"
+                    )
+                continue
+
+            if ensemble_corr_val > max_ensemble_corr:
+                if verbose:
+                    print(
+                        f"[Trial {trial_num}] skip "
+                        f"(ensemble corr={ensemble_corr_val:.5f} > {max_ensemble_corr})"
+                    )
+                continue
+
+            ensemble_pred_mat_risk = np.stack(
+                select_oof_risk_list + [candidate_risk], axis=0
+            )
+            ensemble_pred_mat_surv = np.stack(
+                select_oof_surv_list + [candidate_surv], axis=0
+            )
+
+            eval_result = compute_hybrid_score(
+                label,
+                label,
+                np.mean(ensemble_pred_mat_risk, axis=0),
+                np.mean(ensemble_pred_mat_surv, axis=0),
+                eval_horizons,
+            )
+
+            improve_score = eval_result.hybrid_score - prev_eval_result.hybrid_score
+
+            if verbose:
+                print(
+                    f"[Trial {trial_num}] "
+                    f"score={eval_result.hybrid_score:.6f} "
+                    f"improve={improve_score:+.6f} "
+                    f"pair_corr={max_pair_corr_val:.5f} "
+                    f"ens_corr={ensemble_corr_val:.5f} "
+                    f"duplicate={is_duplicate}"
+                )
+
+            if improve_score < min_imporvement_score:
+                continue
+
+            if max_improvement < improve_score:
+                select_trial_id = trial_num
+                max_improvement = improve_score
+                max_score_result = eval_result
+
+        if select_trial_id is None:
+            print("\n========================")
+            print("No candidate model satisfies the conditions.")
+            print(f"Max Pair Corr: {max_pair_corr}")
+            print(f"Max Ensemble Corr: {max_ensemble_corr}")
+            print(f"Min Improve Score: {min_imporvement_score}")
+            print("Stopping the search.")
+            print("========================\n")
+            break
+
+        print(f"\n>>> SELECTED MODEL [{len(select_model_list) + 1} / {max_model_num}]")
+        print(f"Trial: {select_trial_id}")
+        print(f"Improvement: {max_improvement:+.6f}")
+        print(f"New hybrid score: {max_score_result.hybrid_score:.6f}")
+
+        select_model_list.append(select_trial_id)
+
+        if (not allow_duplicate) or (select_model_list.count(select_trial_id) >= max_select):
+            if select_trial_id in candidate_model_list:
+                candidate_model_list.remove(select_trial_id)
+
+        select_oof_surv_list.append(oof_result[select_trial_id]["oof_surv"])
+        select_oof_risk_list.append(oof_result[select_trial_id]["oof_risk"])
+
+        prev_eval_result = max_score_result
+
+    model_counter = Counter(select_model_list)
+    total_count = sum(model_counter.values())
+
+    model_weights = {
+        model_id: count / total_count
+        for model_id, count in model_counter.items()
+    }
+
+    if verbose:
+        print("\n===== Final Ensemble =====")
+        print(f"Selected models: {select_model_list}")
+        print(f"Model counts: {dict(model_counter)}")
+        print(f"Model weights: {model_weights}")
+        print(f"Final hybrid score: {prev_eval_result.hybrid_score:.6f}")
+
+    return EnsembleModel(
+        model_weights=model_weights,
     )
 
 def make_corr_matrix(pred_matrix:np.ndarray, flatten=True) -> np.ndarray:

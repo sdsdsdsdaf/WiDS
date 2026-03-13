@@ -280,8 +280,6 @@ def run_optuna_experiment(
     study.optimize(objective, n_trials=n_trials)
     return study
 
-studies = {}
-
 for seed in SEEDS:
     for model_type in MODEL_TYPES:
         study = run_optuna_experiment(
@@ -293,6 +291,5 @@ for seed in SEEDS:
             cv_n_repeats=10,
             trials_root="Trials",
         )
-        studies[(seed, model_type)] = study
 
 # %

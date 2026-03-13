@@ -1,4 +1,5 @@
 import json
+import random
 
 import numpy as np
 from sklearn.base import BaseEstimator, clone
@@ -61,7 +62,7 @@ def build_model_from_trial(trial: optuna.Trial, model_type:str, seed=42):
 def load_top_trial_oofs(
     trials: list[optuna.Trial],
     dir:str = None,
-)-> dict[tuple[str, int], dict]:
+)->  dict[tuple[int, str, int], dict]:
     
     result = {}
     trial_sort_by_value = sorted(trials, key= lambda x: x.value, reverse=True)
@@ -78,15 +79,17 @@ def load_top_trial_oofs(
         
         with open(meta_file_path, "r") as f:
             meta = json.load(f)
+        seed = meta['seed']    
         trial_result['value'] = meta['value']
         trial_result['value_std'] = meta['user_attrs']['kfold_result']['std_hybrid']
-        trial_result['trial_id'] =  (meta['model_type'], meta['trial_id'])
+        trial_result['trial_id'] =  (seed, meta['model_type'], meta['trial_id'])
         trial_result['oof_risk'] = np.load(oof_risk_file_path)
         trial_result['oof_surv'] = np.load(oof_surv_file_path)
         trial_result['oof_hit'] = np.load(oof_hit_file_path)
         trial_result['model_type'] = meta['model_type']
         
-        result[(meta['model_type'],num)] = trial_result
+        
+        result[(seed, meta['model_type'],num)] = trial_result
         
     return result
 
@@ -124,6 +127,7 @@ def save_top_trial_oofs(
         "value": trial.value,
         "params": trial.params,
         "user_attrs": trial.user_attrs,
+        "seed": seed
     }
     
     with open(os.path.join(trial_dir, "meta.json"), "w") as f:
@@ -146,9 +150,9 @@ def get_top_trial_oofs(
     n_splits: int = 5,
     n_repeats: int = 4,
     model_type:str = None,
-) -> dict[tuple[str, int], dict]:
+) -> dict[tuple[int, str, int], dict]:
     
-    out_dir = os.path.join(out_dir, model_type.upper())
+    out_dir = os.path.join(out_dir, str(seed), model_type.lower())
     trials:list[optuna.Trial] = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
     trials = sorted(trials, key=lambda x: x.value, reverse=True)
     top_k = max(1, int(len(trials) * top_ratio))
@@ -202,6 +206,7 @@ def from_dict(dataclass_type: Type[T], data: dict) -> T:
 
 def set_seed(seed=42):
     np.random.seed(seed)
+    random.seed(seed)
     
 def make_surv_y(event, time):
     return Surv.from_arrays(event=np.asarray(event, dtype=bool),
@@ -493,7 +498,7 @@ def find_ensemble_model(
 ) -> EnsembleModel:
 
     if init_model_list is None:
-        init_model_list = [("gbsa", 106)]
+        init_model_list = [(42,"gbsa", 160)]
 
     if horizons is None:
         horizons = [12, 24, 48, 72]
@@ -657,12 +662,13 @@ def find_ensemble_model(
         for model_id, count in model_counter.items()
     }
 
-    if verbose:
-        print("\n===== Final Ensemble =====")
-        print(f"Selected models: {select_model_list}")
-        print(f"Model counts: {dict(model_counter)}")
-        print(f"Model weights: {model_weights}")
-        print(f"Final hybrid score: {prev_eval_result.hybrid_score:.6f}")
+    print("\n===== Final Ensemble =====")
+    print(f"Selected models: {select_model_list}")
+    print(f"Model counts: {dict(model_counter)}")
+    print(f"Model weights: {model_weights}")
+    print(f"Final hybrid score: {prev_eval_result.hybrid_score:.6f}")
+    print(f"Final C-index: {prev_eval_result.c_index:.6f}")
+    print(f"Final mean brier: {prev_eval_result.mean_brier}")
 
     return EnsembleModel(
         model_weights=model_weights,

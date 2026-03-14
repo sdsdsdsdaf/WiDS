@@ -1,0 +1,13 @@
+numpy==2.3.4
+pandas==2.3.3
+scipy==1.17.0
+scikit-learn==1.8.0
+scikit-survival==0.27.0
+matplotlib==3.10.7
+seaborn==0.13.2
+joblib==1.5.3
+PyYAML==6.0.3
+tqdm==4.67.1
+optuna==4.6.0
+optuna-dashboard==0.20.0
+kagglehub==0.4.0

@@ -1,0 +1,44 @@
+{
+  "trial_id": 159,
+  "config": {
+    "model_type": "gbsa",
+    "model_params": {
+      "loss": "coxph",
+      "n_estimators": 497,
+      "learning_rate": 0.17190115900051983,
+      "subsample": 0.6414875883701722,
+      "max_depth": 6,
+      "max_features": "sqrt",
+      "max_leaf_nodes": 31,
+      "min_samples_split": 5,
+      "min_samples_leaf": 5,
+      "min_weight_fraction_leaf": 0.0,
+      "min_impurity_decrease": 0.009875576323315169,
+      "criterion": "friedman_mse",
+      "ccp_alpha": 0.0004729677260323131,
+      "dropout_rate": 0.07967587475672733,
+      "validation_fraction": 0.19679417543174904,
+      "n_iter_no_change": null,
+      "tol": 0.0002047967803806007,
+      "random_state": 42,
+      "warm_start": false,
+      "verbose": 0
+    },
+    "seed": 42,
+    "cv_n_splits": 5,
+    "cv_n_repeats": 10,
+    "preprocessing_config": {
+      "eps": 1e-06,
+      "min_speed": 0.01,
+      "max_hours": 9999.0
+    }
+  },
+  "result": {
+    "c_index": 0.9413381914541239,
+    "mean_brier": 0.0764954229322777,
+    "hybrid_score": 0.9288546613836426,
+    "std_c_index": 0.0015725839642887496,
+    "std_mean_brier": 0.003760502544174259,
+    "std_hybrid": 0.002778591635557148
+  }
+}

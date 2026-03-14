@@ -7,3 +7,5 @@ __pycache__/
 *.csv
 Top OOF/
 Trials/
+TOP_OOF/
+delete.py

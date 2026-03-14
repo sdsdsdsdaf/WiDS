@@ -21,10 +21,8 @@ class KFoldResult:
 
 @dataclass
 class EnsembleModel:
-    model_weights:dict[int, float]
-    model_type:str = "GBSA"
-
-
+    model_weights:dict[(int, str, int), float]
+    ensemble_score:MetricOuput
 
 @dataclass
 class PreprocessingConfig:

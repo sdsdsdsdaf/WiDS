@@ -1,0 +1,14 @@
+model_type: coxnet
+model_params:
+  l1_ratio: 0.851465894901151
+  alpha_min_ratio: 0.021629510183060228
+  n_alphas: 154
+  max_iter: 3526
+  tol: 2.2628457225676294e-05
+seed: 1024
+cv_n_splits: 5
+cv_n_repeats: 10
+preprocessing_config:
+  eps: 1.0e-06
+  min_speed: 0.01
+  max_hours: 9999.0

@@ -1,0 +1,29 @@
+{
+  "trial_id": 259,
+  "config": {
+    "model_type": "coxnet",
+    "model_params": {
+      "l1_ratio": 0.7812075373354894,
+      "alpha_min_ratio": 0.025083349606552074,
+      "n_alphas": 159,
+      "max_iter": 17406,
+      "tol": 8.975024999000603e-08
+    },
+    "seed": 777,
+    "cv_n_splits": 5,
+    "cv_n_repeats": 10,
+    "preprocessing_config": {
+      "eps": 1e-06,
+      "min_speed": 0.01,
+      "max_hours": 9999.0
+    }
+  },
+  "result": {
+    "c_index": 0.9299271281881417,
+    "mean_brier": 0.029456481614334645,
+    "hybrid_score": 0.9583586013264084,
+    "std_c_index": 0.006416678162654775,
+    "std_mean_brier": 0.004247872006993647,
+    "std_hybrid": 0.004452241010384061
+  }
+}

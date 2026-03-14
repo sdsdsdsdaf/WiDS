@@ -1,0 +1,29 @@
+model_type: gbsa
+model_params:
+  loss: coxph
+  n_estimators: 498
+  learning_rate: 0.11575542076335549
+  subsample: 0.762783474895786
+  max_depth: 1
+  max_features: log2
+  max_leaf_nodes: 8
+  min_samples_split: 8
+  min_samples_leaf: 20
+  min_weight_fraction_leaf: 0.0
+  min_impurity_decrease: 0.022931176468776855
+  criterion: friedman_mse
+  ccp_alpha: 8.850482653975408e-08
+  dropout_rate: 0.05772519310791554
+  validation_fraction: 0.2904698655100703
+  n_iter_no_change: null
+  tol: 4.70913110942378e-05
+  random_state: 2023
+  warm_start: false
+  verbose: 0
+seed: 2023
+cv_n_splits: 5
+cv_n_repeats: 10
+preprocessing_config:
+  eps: 1.0e-06
+  min_speed: 0.01
+  max_hours: 9999.0

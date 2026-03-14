@@ -286,7 +286,7 @@ for seed in SEEDS:
             train_data=train_processed,
             model_type=model_type,
             seed=seed,
-            n_trials=300,
+            n_trials=TRIAL_NUM,
             cv_n_splits=5,
             cv_n_repeats=10,
             trials_root="Trials",

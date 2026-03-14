@@ -277,19 +277,22 @@ def run_optuna_experiment(
         trials_root=trials_root,
     )
 
-    study.optimize(objective, n_trials=n_trials)
+    study.optimize(objective, n_trials=remain_trials)
     return study
 
-for seed in SEEDS:
-    for model_type in MODEL_TYPES:
-        study = run_optuna_experiment(
-            train_data=train_processed,
-            model_type=model_type,
-            seed=seed,
-            n_trials=TRIAL_NUM,
-            cv_n_splits=5,
-            cv_n_repeats=10,
-            trials_root="Trials",
-        )
 
+if __name__  == "__main__":
+
+    for seed in SEEDS:
+        for model_type in MODEL_TYPES:
+            study = run_optuna_experiment(
+                train_data=train_processed,
+                model_type=model_type,
+                seed=seed,
+                n_trials=TRIAL_NUM,
+                cv_n_splits=5,
+                cv_n_repeats=10,
+                trials_root="Trials",
+            )
+            print()
 # %

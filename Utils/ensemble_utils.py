@@ -319,10 +319,12 @@ def find_ensemble_model(
         eval_horizons,
     )
 
+    print("===== Initial Ensemble =====")
+    print(f"Initial models: {select_model_list}")
+    print(f"Initial hybrid score: {prev_eval_result.hybrid_score:.6f}")
+    
     if verbose:
-        print("===== Initial Ensemble =====")
-        print(f"Initial models: {select_model_list}")
-        print(f"Initial hybrid score: {prev_eval_result.hybrid_score:.6f}")
+
         print(f"Allow duplicate: {allow_duplicate}")
         print(f"Max select per model: {max_select}")
         print(f"Ensemble Candidate Model: {len(candidate_model_list)}")
@@ -474,7 +476,7 @@ def search_ensemble_weight(
     label,
     eval_horizons,
     weight_grid: NDArray | None = None,
-    n_iter: int = 20000,
+    n_iter: int = 100000,
     random_state: int = 42,
 ) -> EnsembleModel:
     """

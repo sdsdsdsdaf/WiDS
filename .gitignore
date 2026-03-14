@@ -5,5 +5,7 @@ __pycache__/
 *$py.class
 *.log
 *.csv
+Top OOF/
+Trials/
 TOP_OOF/
 delete.py

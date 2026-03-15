@@ -386,7 +386,7 @@ class XGBCoxWrapper(BaseEstimator):
         subsample=0.8,
         colsample_bytree=0.8,
         num_boost_round=500,
-        seed=42
+        random_state=42
     ):
 
         self.eta = eta
@@ -394,7 +394,7 @@ class XGBCoxWrapper(BaseEstimator):
         self.subsample = subsample
         self.colsample_bytree = colsample_bytree
         self.num_boost_round = num_boost_round
-        self.seed = seed
+        self.random_state = random_state
 
     def fit(self, X, y):
 
@@ -405,7 +405,7 @@ class XGBCoxWrapper(BaseEstimator):
             "subsample": self.subsample,
             "colsample_bytree": self.colsample_bytree,
             "tree_method": "hist",
-            "seed": self.seed
+            "seed": self.random_state
         }
 
         dtrain = xgb.DMatrix(X, label=y["time"])

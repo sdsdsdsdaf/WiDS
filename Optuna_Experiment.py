@@ -66,7 +66,7 @@ SEEDS = [
     701, 809, 911, 1009, 2026
 ]
 
-MODEL_TYPES = {'coxnet', 'gbsa', 'rsf', 'deephit', 'deepsurv', 'xgbcox'}
+MODEL_TYPES = ['coxnet', 'gbsa', 'rsf', 'deephit', 'deepsurv', 'xgbcox']
 
 TRIAL_NUM = 300
 
@@ -226,7 +226,7 @@ def sample_xgbcox_config(trial: Trial, seed: int = 42) -> dict:
         "subsample": trial.suggest_float("subsample", 0.5, 1.0),
         "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
         "num_boost_round": trial.suggest_int("num_boost_round", 50, 1000),
-        "seed": seed
+        "random_state": seed
     }
 
 #GradientBoostingSurvivalAnalysis(**asdict(config.gbsa_config))

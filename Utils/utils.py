@@ -71,6 +71,7 @@ def build_model(model_type:str, seed=42, **params):
     elif model_type == "deepsurv":
         model = DeepSurv(**params)
     elif model_type == "xgbcox":
+        params['random_state'] = seed
         model = XGBCoxWrapper(**params)
     else:
         raise ValueError(f"Unknown model_type: {model_type}")

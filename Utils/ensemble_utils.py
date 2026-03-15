@@ -467,7 +467,7 @@ def find_ensemble_model(
 
     return EnsembleModel(
         model_weights=model_weights,
-        ensemble_score=max_score_result
+        ensemble_score=max_score_result,
     )
     
 def search_ensemble_weight(

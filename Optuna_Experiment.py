@@ -66,7 +66,7 @@ SEEDS = [
     701, 809, 911, 1009, 2026
 ]
 
-MODEL_TYPES = {'coxnet', 'gbsa'}
+MODEL_TYPES = {'coxnet', 'gbsa', 'rsf', 'deephit', 'deepsurv', 'xgbcox'}
 
 TRIAL_NUM = 300
 
@@ -155,6 +155,78 @@ def sample_coxnet_config(trial: Trial, seed: int = 42) -> dict:
         "n_alphas": trial.suggest_int("n_alphas", 50, 300),
         "max_iter": trial.suggest_int("max_iter", 1000, 20000),
         "tol": trial.suggest_float("tol", 1e-8, 1e-4, log=True),
+    }
+
+def sample_hidden_dims(
+    trial: Trial,
+    min_layers: int = 1,
+    max_layers: int = 3,
+    min_dim: int = 32,
+    max_dim: int = 256,
+) -> tuple:
+    n_layers = trial.suggest_int("n_layers", min_layers, max_layers)
+    hidden_dims = []
+
+    for i in range(n_layers):
+        dim = trial.suggest_int(f"hidden_dim_{i}", min_dim, max_dim, log=True)
+        hidden_dims.append(dim)
+
+    return tuple(hidden_dims)
+
+
+def sample_deephit_config(trial: Trial, seed: int = 42) -> dict:
+    return {
+        "num_durations": trial.suggest_int("num_durations", 30, 100),
+        "hidden_dims": sample_hidden_dims(
+            trial,
+            min_layers=1,
+            max_layers=4,
+            min_dim=32,
+            max_dim=256,
+        ),
+        "batch_norm": trial.suggest_categorical("batch_norm", [True, False]),
+        "dropout": trial.suggest_float("dropout", 0.0, 0.35),
+        "alpha": trial.suggest_float("alpha", 0.05, 0.5),
+        "sigma": trial.suggest_float("sigma", 0.05, 0.3),
+        "optimizer": trial.suggest_categorical("optimizer", ["adam", "adamw"]),
+        "lr": trial.suggest_float("lr", 1e-4, 3e-3, log=True),
+        "weight_decay": trial.suggest_float("weight_decay", 1e-7, 1e-3, log=True),
+        "batch_size": trial.suggest_categorical("batch_size", [64, 128, 256]),
+        "epochs": 200,
+        "patience": 15,
+        "verbose": False,
+    }
+
+
+def sample_deepsurv_config(trial: Trial, seed: int = 42) -> dict:
+    return {
+        "hidden_dims": sample_hidden_dims(
+            trial,
+            min_layers=1,
+            max_layers=3,
+            min_dim=32,
+            max_dim=256,
+        ),
+        "batch_norm": trial.suggest_categorical("batch_norm", [True, False]),
+        "dropout": trial.suggest_float("dropout", 0.0, 0.35),
+        "optimizer": trial.suggest_categorical("optimizer", ["adam", "adamw"]),
+        "lr": trial.suggest_float("lr", 1e-4, 3e-3, log=True),
+        "weight_decay": trial.suggest_float("weight_decay", 1e-7, 1e-3, log=True),
+        "batch_size": trial.suggest_categorical("batch_size", [64, 128, 256]),
+        "epochs": 200,
+        "patience": 15,
+        "verbose": False,
+    }
+
+
+def sample_xgbse_config(trial: Trial, seed: int = 42) -> dict:
+    return {
+        "eta": trial.suggest_float("eta", 1e-3, 3e-1, log=True),
+        "max_depth": trial.suggest_int("max_depth", 2, 10),
+        "subsample": trial.suggest_float("subsample", 0.5, 1.0),
+        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
+        "num_boost_round": trial.suggest_int("num_boost_round", 50, 1000),
+        "seed": seed
     }
 
 #GradientBoostingSurvivalAnalysis(**asdict(config.gbsa_config))
@@ -260,11 +332,11 @@ def run_optuna_experiment(
     else:
         current_trials = len(study.trials)
     
-    remain_trials = max(0, TRIAL_NUM - current_trials)
+    remain_trials = max(0, n_trials - current_trials)
 
     print(
         f"[{model_type} | seed={seed}] "
-        f"current={current_trials}, target={TRIAL_NUM}, remain={remain_trials}"
+        f"current={current_trials}, target={n_trials}, remain={remain_trials}"
     )
 
 

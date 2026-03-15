@@ -21,17 +21,37 @@ from collections import Counter
 
 try:
     from Utils.Config import Config, MetricOuput, KFoldResult, TrialResult, EnsembleModel
-    from Utils.Model import CoxnetWithStandardScaler
+    from Utils.Model import *
 except ImportError:
     from Config import Config, MetricOuput, KFoldResult, TrialResult, EnsembleModel
-    from Model import CoxnetWithStandardScaler
+    from Model import *
 from dataclasses import asdict
 from dataclasses import is_dataclass, fields
 from typing import Type, TypeVar
 import optuna
 from sksurv.ensemble import GradientBoostingSurvivalAnalysis, RandomSurvivalForest
+import random
+import numpy as np
+import torch
 
 
+def set_seed(seed=42):
+    # python
+    random.seed(seed)
+
+    # numpy
+    np.random.seed(seed)
+
+    # pytorch
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # cudnn
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    
+    
 HORIZONS= np.array([12.0, 24.0, 48.0, 72.0])  # 예측할 시간 간격 (시간 단위)
 
 T = TypeVar("T")
@@ -40,15 +60,18 @@ def build_model(model_type:str, seed=42, **params):
     if model_type == "gbsa":
         params["random_state"] = seed
         model = GradientBoostingSurvivalAnalysis(**params)
-
     elif model_type == "rsf":
         params["random_state"] = seed
         params["n_jobs"] = -1
         model = RandomSurvivalForest(**params)
-
     elif model_type == "coxnet":
         model = CoxnetWithStandardScaler(**params)
-
+    elif model_type == "deephit":
+        model = DeepHit(**params)
+    elif model_type == "deepsurv":
+        model = DeepSurv(**params)
+    elif model_type == "xgbcox":
+        model = XGBCoxWrapper(**params)
     else:
         raise ValueError(f"Unknown model_type: {model_type}")
     
@@ -203,11 +226,6 @@ def from_dict(dataclass_type: Type[T], data: dict) -> T:
             kwargs[f.name] = value
 
     return dataclass_type(**kwargs)
-
-
-def set_seed(seed=42):
-    np.random.seed(seed)
-    random.seed(seed)
     
 def make_surv_y(event, time):
     return Surv.from_arrays(event=np.asarray(event, dtype=bool),
@@ -298,6 +316,22 @@ def compute_hybrid_score(y_train, y_valid, risk_score, pred_surv, horizons=None)
 
     If your competition uses a different normalization/aggregation,
     adjust this formula accordingly.
+    
+    ---
+    ```python
+    ... X_train, X_valid, y_train, y_valid = train_test_split(X_full, y_full, test_size=0.33, random_state=42)
+    ... 
+    ... event_horizon = np.array(HORIZONS).copy()
+    ... event_horizon[-1] = min(event_horizon[-1], y_valid['time'].max() - 1e-6)
+    ... 
+    ... print("Event horizons:", event_horizon)
+    ... model = DeepHit()
+    ... 
+    ... model.fit(X_train, y_train)
+    ... risk_score = model.predict(X_valid)
+    ... pred_surv = get_surv_pred_from_model(model, X_valid, event_horizon)
+    ... 
+    ... result = compute_hybrid_score(y_train, y_valid, risk_score, pred_surv, event_horizon)
     """
     cidx = compute_c_index(y_valid, risk_score)
     mean_bs = compute_mean_brier(y_train, y_valid, pred_surv, horizons)
@@ -359,7 +393,7 @@ def make_oof_predictions(
         )
 
         X_val = data.iloc[val_idx].drop(columns=["time_to_hit_hours", "event"])
-
+        
         fold_model = clone(model)
         fold_model.fit(X_train, y_train)
 

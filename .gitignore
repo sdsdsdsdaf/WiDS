@@ -10,3 +10,4 @@ Trials/
 TOP_OOF/
 delete.py
 *.pt
+catboost_info/

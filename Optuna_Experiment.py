@@ -176,7 +176,7 @@ def sample_hidden_dims(
 
 def sample_deephit_config(trial: Trial, seed: int = 42) -> dict:
     return {
-        "num_durations": trial.suggest_int("num_durations", 30, 100),
+        "num_durations": trial.suggest_int("num_durations", 10, 80),
         "hidden_dims": sample_hidden_dims(
             trial,
             min_layers=1,

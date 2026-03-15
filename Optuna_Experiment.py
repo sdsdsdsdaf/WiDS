@@ -66,7 +66,7 @@ SEEDS = [
     701, 809, 911, 1009, 2026
 ]
 
-MODEL_TYPES = ['coxnet', 'gbsa', 'rsf', 'deephit', 'deepsurv', 'xgbcox']
+MODEL_TYPES = ['coxnet', 'gbsa', 'rsf', 'xgbcox']
 
 TRIAL_NUM = 300
 
@@ -219,14 +219,32 @@ def sample_deepsurv_config(trial: Trial, seed: int = 42) -> dict:
     }
 
 
-def sample_xgbcox_config(trial: Trial, seed: int = 42) -> dict:
+def sample_xgbcox_config(trial:Trial):
     return {
-        "eta": trial.suggest_float("eta", 1e-3, 3e-1, log=True),
+        "eta": trial.suggest_float("eta", 1e-3, 0.2, log=True),
         "max_depth": trial.suggest_int("max_depth", 2, 10),
+        "min_child_weight": trial.suggest_float("min_child_weight", 1e-2, 50.0, log=True),
         "subsample": trial.suggest_float("subsample", 0.5, 1.0),
         "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
-        "num_boost_round": trial.suggest_int("num_boost_round", 50, 1000),
-        "random_state": seed
+        "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
+        "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 100.0, log=True),
+        "gamma": trial.suggest_float("gamma", 1e-8, 10.0, log=True),
+        "num_boost_round": trial.suggest_int("num_boost_round", 100, 2000),
+        "tree_method": "hist",
+        "already_exp": True,
+    }
+
+def sample_catboost_cox_params(trial:Trial):
+    return {
+        "iterations": trial.suggest_int("iterations", 200, 2000),
+        "learning_rate": trial.suggest_float("learning_rate", 1e-3, 0.2, log=True),
+        "depth": trial.suggest_int("depth", 4, 10),
+        "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1e-3, 30.0, log=True),
+        "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 1, 64),
+        "random_strength": trial.suggest_float("random_strength", 1e-3, 20.0, log=True),
+        "bagging_temperature": trial.suggest_float("bagging_temperature", 0.0, 10.0),
+        "rsm": trial.suggest_float("rsm", 0.5, 1.0),
+        "already_exp": False,
     }
 
 #GradientBoostingSurvivalAnalysis(**asdict(config.gbsa_config))

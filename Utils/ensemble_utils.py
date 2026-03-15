@@ -251,7 +251,7 @@ def collect_top_trial_oofs_from_configs(
             if verbose:
                 print(
                     f"[collect] seed={seed}, model={model_type}, "
-                    f"added={len(one_result)}, total={len(all_oof_result)}"
+                    f"added={len(one_result)}, total={len(all_oof_result)}\n"
                 )
 
     return all_oof_result
@@ -408,7 +408,7 @@ def find_ensemble_model(
                     f"\nduplicate={is_duplicate}"
                 )
                 if use_weight_grid_search:
-                    msg += f"\nbest_prev_weight={best_weight:.3f} \n best_candidate_weight={1.0-best_weight:.3f}"
+                    msg += f"\nbest_prev_weight={best_weight:.3f} \nbest_candidate_weight={1.0-best_weight:.3f}"
                 print(msg)
 
             if improve_score < min_imporvement_score:

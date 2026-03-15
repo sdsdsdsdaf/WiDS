@@ -51,7 +51,12 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
-    
+def print_metric_score(result:EnsembleModel):
+    score = result.ensemble_score
+    print("C-index: ", score.c_index)
+    print("Mean Brier: ", score.mean_brier)
+    print("Hybrid Score: ", score.hybrid_score)
+
 HORIZONS= np.array([12.0, 24.0, 48.0, 72.0])  # 예측할 시간 간격 (시간 단위)
 
 T = TypeVar("T")

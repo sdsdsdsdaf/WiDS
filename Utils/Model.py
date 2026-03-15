@@ -1,5 +1,6 @@
 from typing import Any
 
+from catboost import CatBoostRegressor
 from sksurv.linear_model import CoxnetSurvivalAnalysis
 import numpy
 from numpy.typing import NDArray
@@ -19,6 +20,93 @@ import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="torchtuples")
+
+
+import numpy as np
+
+
+class StepSurvivalFunction:
+    def __init__(self, times, surv_values):
+        self.x = np.asarray(times, dtype=float)
+        self.y = np.asarray(surv_values, dtype=float)
+        self.domain = (float(self.x[0]), float(self.x[-1]))
+
+    def __call__(self, t):
+        t = np.asarray(t, dtype=float)
+        idx = np.searchsorted(self.x, t, side="right") - 1
+        idx = np.clip(idx, 0, len(self.y) - 1)
+        return self.y[idx]
+
+
+def breslow_baseline(event, time, risk_score, already_exp=False, clip_value=20.0):
+    """
+    Estimate baseline cumulative hazard H0(t) and baseline survival S0(t)
+    using the Breslow estimator.
+
+    Parameters
+    ----------
+    already_exp : bool
+        If True, risk_score is already hazard ratio scale.
+        If False, risk_score is log-risk and exp() will be applied.
+    """
+    event = np.asarray(event, dtype=bool)
+    time = np.asarray(time, dtype=float)
+    risk_score = np.asarray(risk_score, dtype=float).reshape(-1)
+
+    order = np.argsort(time)
+    time = time[order]
+    event = event[order]
+    risk_score = risk_score[order]
+
+    if already_exp:
+        exp_risk = np.clip(risk_score, 1e-12, 1e12)
+    else:
+        exp_risk = np.exp(np.clip(risk_score, -clip_value, clip_value))
+
+    unique_event_times = np.unique(time[event])
+
+    cumulative_hazard = 0.0
+    baseline_cumhaz = []
+
+    for t in unique_event_times:
+        d_i = np.sum((time == t) & event)
+        risk_set_sum = np.sum(exp_risk[time >= t])
+
+        h_i = 0.0 if risk_set_sum <= 0 else d_i / risk_set_sum
+        cumulative_hazard += h_i
+        baseline_cumhaz.append(cumulative_hazard)
+
+    baseline_cumhaz = np.asarray(baseline_cumhaz, dtype=float)
+    baseline_surv = np.exp(-baseline_cumhaz)
+
+    return unique_event_times, baseline_cumhaz, baseline_surv
+
+
+def make_cox_survival_functions(risk, event_times, baseline_cumhaz, already_exp=False, clip_value=20.0):
+    """
+    Build individual survival functions from Cox risk scores.
+
+    Parameters
+    ----------
+    already_exp : bool
+        If True, risk is already hazard ratio scale.
+        If False, risk is log-risk and exp() will be applied.
+    """
+    risk = np.asarray(risk, dtype=float).reshape(-1)
+    event_times = np.asarray(event_times, dtype=float)
+    baseline_cumhaz = np.asarray(baseline_cumhaz, dtype=float)
+
+    surv_fns = []
+    for r in risk:
+        if already_exp:
+            hr = np.clip(r, 1e-12, 1e12)
+        else:
+            hr = np.exp(np.clip(r, -clip_value, clip_value))
+
+        surv = np.exp(-baseline_cumhaz * hr)
+        surv_fns.append(StepSurvivalFunction(event_times, surv))
+
+    return surv_fns
 
 class CoxnetWithStandardScaler(BaseEstimator):
     def __init__(
@@ -72,6 +160,7 @@ class CoxnetWithStandardScaler(BaseEstimator):
             verbose=self.verbose,
             fit_baseline_model=self.fit_baseline_model,
         )
+        
         self.model_.fit(X_cpy, y)
         return self
 
@@ -378,77 +467,219 @@ class DeepSurv(BaseEstimator):
         return fns
     
 class XGBCoxWrapper(BaseEstimator):
-
     def __init__(
         self,
         eta=0.05,
         max_depth=6,
+        min_child_weight=1.0,
         subsample=0.8,
         colsample_bytree=0.8,
+        reg_alpha=0.0,
+        reg_lambda=1.0,
+        gamma=0.0,
         num_boost_round=500,
-        random_state=42
+        tree_method="hist",
+        random_state=42,
+        verbosity=False,
+        already_exp=False,
     ):
-
         self.eta = eta
         self.max_depth = max_depth
+        self.min_child_weight = min_child_weight
         self.subsample = subsample
         self.colsample_bytree = colsample_bytree
+        self.reg_alpha = reg_alpha
+        self.reg_lambda = reg_lambda
+        self.gamma = gamma
         self.num_boost_round = num_boost_round
+        self.tree_method = tree_method
         self.random_state = random_state
+        self.verbosity = verbosity
+        self.already_exp = already_exp
+        
+        self.event_times_ = None
+        self.baseline_surv = None
+        self.baseline_cumhaz = None
+
+    @staticmethod
+    def _check_y(y):
+        if getattr(y, "dtype", None) is None or y.dtype.names is None:
+            raise ValueError("y must be a structured array with fields ('event', 'time').")
+        if "event" not in y.dtype.names or "time" not in y.dtype.names:
+            raise ValueError("y must contain fields 'event' and 'time'.")
+
+        event = np.asarray(y["event"], dtype=bool)
+        time = np.asarray(y["time"], dtype=float)
+
+        if np.any(time <= 0):
+            raise ValueError("All survival times must be positive.")
+
+        return event, time
 
     def fit(self, X, y):
+        event, time = self._check_y(y)
 
         params = {
             "objective": "survival:cox",
             "eta": self.eta,
             "max_depth": self.max_depth,
+            "min_child_weight": self.min_child_weight,
             "subsample": self.subsample,
             "colsample_bytree": self.colsample_bytree,
-            "tree_method": "hist",
-            "seed": self.random_state
+            "reg_alpha": self.reg_alpha,
+            "reg_lambda": self.reg_lambda,
+            "gamma": self.gamma,
+            "tree_method": self.tree_method,
+            "seed": self.random_state,
+            "verbosity": self.verbosity,
         }
 
-        dtrain = xgb.DMatrix(X, label=y["time"])
-
-        self.model = xgb.train(
-            params,
-            dtrain,
-            num_boost_round=self.num_boost_round
+        dtrain = xgb.DMatrix(X, label=time)
+        self.model_ = xgb.train(
+            params=params,
+            dtrain=dtrain,
+            num_boost_round=self.num_boost_round,
         )
 
-        self.event_times_, self.baseline_surv_ = kaplan_meier_estimator(
-            y["event"], y["time"]
+        train_risk = self.model_.predict(dtrain)
+
+        self.event_times_, self.baseline_cumhaz, self.baseline_surv_ = breslow_baseline(
+            event=event,
+            time=time,
+            risk_score=train_risk,
+            already_exp=self.already_exp
         )
 
         return self
 
     def predict(self, X):
-
+        """
+        Return log-risk score.
+        Higher value = higher risk.
+        """
         dtest = xgb.DMatrix(X)
-
-        risk = self.model.predict(dtest)
-        risk = (risk - risk.mean()) / risk.std()
-
-        return risk
+        risk = self.model_.predict(dtest)
+        return np.asarray(risk, dtype=float).reshape(-1)
 
     def predict_survival_function(self, X):
-
         risk = self.predict(X)
+        return make_cox_survival_functions(
+            risk=risk,
+            event_times=self.event_times_,
+            baseline_cumhaz=self.baseline_cumhaz,
+            already_exp=self.already_exp
+        )
 
-        surv_fns = []
 
-        for r in risk:
+class CatBoostCoxWrapper(BaseEstimator):
+    def __init__(
+        self,
+        iterations=500,
+        learning_rate=0.05,
+        depth=6,
+        l2_leaf_reg=3.0,
+        min_data_in_leaf=1,
+        random_strength=1.0,
+        bagging_temperature=0.0,
+        rsm=1.0,
+        loss_function="Cox",
+        eval_metric="Cox",
+        random_state=42,
+        verbose=False,
+        already_exp=False
+    ):
+        self.iterations = iterations
+        self.learning_rate = learning_rate
+        self.depth = depth
+        self.l2_leaf_reg = l2_leaf_reg
+        self.min_data_in_leaf = min_data_in_leaf
+        self.random_strength = random_strength
+        self.bagging_temperature = bagging_temperature
+        self.rsm = rsm
+        self.loss_function = loss_function
+        self.eval_metric = eval_metric
+        self.random_state = random_state
+        self.verbose = verbose
+        self.already_exp = already_exp
+        
+        self.event_times_ = None
+        self.baseline_surv = None
+        self.baseline_cumhaz = None
 
-            surv = self.baseline_surv_ ** np.exp(r)
+    @staticmethod
+    def _check_y(y):
+        if getattr(y, "dtype", None) is None or y.dtype.names is None:
+            raise ValueError("y must be a structured array with fields ('event', 'time').")
+        if "event" not in y.dtype.names or "time" not in y.dtype.names:
+            raise ValueError("y must contain fields 'event' and 'time'.")
 
-            def fn(t, times=self.event_times_, surv=surv):
-                return np.interp(t, times, surv, left=1.0, right=surv[-1])
+        event = np.asarray(y["event"], dtype=bool)
+        time = np.asarray(y["time"], dtype=float)
 
-            fn.domain = (self.event_times_.min(), self.event_times_.max())
-            surv_fns.append(fn)
+        if np.any(time <= 0):
+            raise ValueError("All survival times must be positive.")
 
-        return surv_fns
-    
+        return event, time
+
+    @staticmethod
+    def _encode_catboost_cox_label(event, time):
+        """
+        CatBoost Cox label encoding:
+        - event observed  -> +time
+        - censored        -> -time
+        """
+        return np.where(event, time, -time).astype(float)
+
+    def fit(self, X, y):
+        event, time = self._check_y(y)
+        label = self._encode_catboost_cox_label(event, time)
+
+        self.model_ = CatBoostRegressor(
+            loss_function=self.loss_function,
+            eval_metric=self.eval_metric,
+            iterations=self.iterations,
+            learning_rate=self.learning_rate,
+            depth=self.depth,
+            l2_leaf_reg=self.l2_leaf_reg,
+            min_data_in_leaf=self.min_data_in_leaf,
+            random_strength=self.random_strength,
+            bagging_temperature=self.bagging_temperature,
+            rsm=self.rsm,
+            random_seed=self.random_state,
+            verbose=self.verbose,
+        )
+
+        self.model_.fit(X, label, verbose=self.verbose)
+
+        train_risk = self.model_.predict(X)
+
+        self.event_times_, self.baseline_cumhaz ,self.baseline_surv_ = breslow_baseline(
+            event=event,
+            time=time,
+            risk_score=train_risk,
+            already_exp=self.already_exp
+        )
+
+        return self
+
+    def predict(self, X):
+        """
+        Return log-risk score.
+        Higher value = higher risk.
+        """
+        risk = self.model_.predict(X)
+        return np.asarray(risk, dtype=float).reshape(-1)
+
+    def predict_survival_function(self, X):
+        risk = self.predict(X)
+        return make_cox_survival_functions(
+            risk=risk,
+            event_times=self.event_times_,
+            baseline_cumhaz=self.baseline_cumhaz,
+            already_exp=self.already_exp
+        )
+
+
 if __name__ == "__main__":
     
     import kagglehub
@@ -481,11 +712,13 @@ if __name__ == "__main__":
     event_horizon[-1] = min(event_horizon[-1], y_valid['time'].max() - 1e-6)
 
     print("Event horizons:", event_horizon)
+
     
-    model = XGBCoxWrapper(seed=42)
+    model = CatBoostCoxWrapper(random_state=42, already_exp=False)
     model.fit(X_train, y_train)
     
     risk_score = model.predict(X_valid)
+    print("train risk min/max:", risk_score.min(), risk_score.max())
     pred_surv = get_surv_pred_from_model(model, X_valid, event_horizon)
     
     #Valid

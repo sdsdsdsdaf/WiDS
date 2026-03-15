@@ -66,7 +66,7 @@ SEEDS = [
     701, 809, 911, 1009, 2026
 ]
 
-MODEL_TYPES = ['coxnet', 'gbsa', 'rsf', 'xgbcox']
+MODEL_TYPES = ['catbcox','coxnet', 'gbsa', 'rsf', 'xgbcox']
 
 TRIAL_NUM = 300
 
@@ -234,16 +234,15 @@ def sample_xgbcox_config(trial:Trial):
         "already_exp": True,
     }
 
-def sample_catboost_cox_params(trial:Trial):
+def sample_catboost_cox_config(trial:Trial, seed=42):
     return {
-        "iterations": trial.suggest_int("iterations", 200, 2000),
-        "learning_rate": trial.suggest_float("learning_rate", 1e-3, 0.2, log=True),
-        "depth": trial.suggest_int("depth", 4, 10),
-        "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1e-3, 30.0, log=True),
-        "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 1, 64),
-        "random_strength": trial.suggest_float("random_strength", 1e-3, 20.0, log=True),
-        "bagging_temperature": trial.suggest_float("bagging_temperature", 0.0, 10.0),
-        "rsm": trial.suggest_float("rsm", 0.5, 1.0),
+        "iterations": trial.suggest_int("iterations", 300, 1500),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
+        "depth": trial.suggest_int("depth", 4, 8),
+        "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1e-2, 20.0, log=True),
+        "random_strength": trial.suggest_float("random_strength", 1e-2, 5.0, log=True),
+        "bagging_temperature": trial.suggest_float("bagging_temperature", 0.0, 2.0),
+        "rsm": trial.suggest_float("rsm", 0.7, 1.0),
         "already_exp": False,
     }
 
@@ -278,6 +277,8 @@ def make_objective(
             config.model_params = sample_xgbcox_config(trial, seed)
         elif config.model_type.lower() == "deephit":
             config.model_params = sample_deephit_config(trial, seed)
+        elif config.model_type.lower() == "catbcox":
+            config.model_params = sample_catboost_cox_config(trial, seed)
         else:
             raise ValueError(f"Unknown model type: {config.model_type}")
         

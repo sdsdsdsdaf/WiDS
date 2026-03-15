@@ -219,7 +219,7 @@ def sample_deepsurv_config(trial: Trial, seed: int = 42) -> dict:
     }
 
 
-def sample_xgbse_config(trial: Trial, seed: int = 42) -> dict:
+def sample_xgbcox_config(trial: Trial, seed: int = 42) -> dict:
     return {
         "eta": trial.suggest_float("eta", 1e-3, 3e-1, log=True),
         "max_depth": trial.suggest_int("max_depth", 2, 10),
@@ -254,6 +254,12 @@ def make_objective(
             config.model_params = sample_rsf_config(trial, seed)
         elif config.model_type.lower() == 'coxnet':
             config.model_params = sample_coxnet_config(trial, seed)
+        elif config.model_type.lower() == "deepsurv":
+            config.model_params = sample_deepsurv_config(trial, seed)
+        elif config.model_type.lower() == "xgbcox":
+            config.model_params = sample_xgbcox_config(trial, seed)
+        elif config.model_type.lower() == "deephit":
+            config.model_params = sample_deephit_config(trial, seed)
         else:
             raise ValueError(f"Unknown model type: {config.model_type}")
         

@@ -480,7 +480,7 @@ class XGBCoxWrapper(BaseEstimator):
         num_boost_round=500,
         tree_method="hist",
         random_state=42,
-        verbosity=False,
+        verbosity=0,
         already_exp=False,
     ):
         self.eta = eta
@@ -541,7 +541,7 @@ class XGBCoxWrapper(BaseEstimator):
             num_boost_round=self.num_boost_round,
         )
 
-        train_risk = self.model_.predict(dtrain)
+        train_risk = self.model_.predict(dtrain, output_margin=(not self.already_exp))
 
         self.event_times_, self.baseline_cumhaz, self.baseline_surv_ = breslow_baseline(
             event=event,
@@ -558,7 +558,7 @@ class XGBCoxWrapper(BaseEstimator):
         Higher value = higher risk.
         """
         dtest = xgb.DMatrix(X)
-        risk = self.model_.predict(dtest)
+        risk = self.model_.predict(dtest, output_margin=(not self.already_exp))
         return np.asarray(risk, dtype=float).reshape(-1)
 
     def predict_survival_function(self, X):
@@ -585,9 +585,12 @@ class CatBoostCoxWrapper(BaseEstimator):
         loss_function="Cox",
         eval_metric="Cox",
         random_state=42,
-        verbose=False,
+        verbose=0,
         already_exp=False
     ):
+        if already_exp:
+            raise ValueError("Does Not Suport Expentional Risk")
+        
         self.iterations = iterations
         self.learning_rate = learning_rate
         self.depth = depth
@@ -651,7 +654,7 @@ class CatBoostCoxWrapper(BaseEstimator):
 
         self.model_.fit(X, label, verbose=self.verbose)
 
-        train_risk = self.model_.predict(X)
+        train_risk = self.model_.predict(X, prediction_type="RawFormulaVal")
 
         self.event_times_, self.baseline_cumhaz ,self.baseline_surv_ = breslow_baseline(
             event=event,
@@ -667,7 +670,7 @@ class CatBoostCoxWrapper(BaseEstimator):
         Return log-risk score.
         Higher value = higher risk.
         """
-        risk = self.model_.predict(X)
+        risk = self.model_.predict(X, prediction_type="RawFormulaVal")
         return np.asarray(risk, dtype=float).reshape(-1)
 
     def predict_survival_function(self, X):
@@ -714,7 +717,7 @@ if __name__ == "__main__":
     print("Event horizons:", event_horizon)
 
     
-    model = CatBoostCoxWrapper(random_state=42, already_exp=False)
+    model = XGBCoxWrapper(random_state=42, already_exp=False)
     model.fit(X_train, y_train)
     
     risk_score = model.predict(X_valid)

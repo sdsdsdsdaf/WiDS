@@ -4,6 +4,7 @@
 # * Use GBSA and LGBM
 
 # %%
+from catboost import CatBoostError
 import numpy as np
 from sklearn.base import BaseEstimator
 import pandas as pd
@@ -66,7 +67,7 @@ SEEDS = [
     701, 809, 911, 1009, 2026
 ]
 
-MODEL_TYPES = ['catbcox','coxnet', 'gbsa', 'rsf', 'xgbcox']
+MODEL_TYPES = ['coxnet', 'gbsa', 'rsf', 'xgbcox', 'catbcox']
 
 TRIAL_NUM = 300
 
@@ -219,7 +220,7 @@ def sample_deepsurv_config(trial: Trial, seed: int = 42) -> dict:
     }
 
 
-def sample_xgbcox_config(trial:Trial):
+def sample_xgbcox_config(trial:Trial, seed=42):
     return {
         "eta": trial.suggest_float("eta", 1e-3, 0.2, log=True),
         "max_depth": trial.suggest_int("max_depth", 2, 10),
@@ -231,7 +232,7 @@ def sample_xgbcox_config(trial:Trial):
         "gamma": trial.suggest_float("gamma", 1e-8, 10.0, log=True),
         "num_boost_round": trial.suggest_int("num_boost_round", 100, 2000),
         "tree_method": "hist",
-        "already_exp": True,
+        "already_exp": False,
     }
 
 def sample_catboost_cox_config(trial:Trial, seed=42):
@@ -374,7 +375,7 @@ def run_optuna_experiment(
         trials_root=trials_root,
     )
 
-    study.optimize(objective, n_trials=remain_trials)
+    study.optimize(objective, n_trials=remain_trials, catch=(CatBoostError,))
     return study
 
 
